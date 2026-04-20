@@ -1,36 +1,27 @@
-# Lab 9 — Python Design Patterns (Singleton, Visitor, AST)
+# Lab 9 — Design Patterns în Python
 
-Template GitHub Classroom pentru laboratorul 9 de Programare Python.
+Template GitHub Classroom pentru laboratorul 9 — Paradigme de Programare (TUIASI).
 
 ## Conținut
 
-- **`lab9/log.py`** — Singleton Log (stub de implementat)
-- **`lab9/ast_tree.py`** — Token, AST, ASTBuilder cu prioritate operatori (stub)
-- **`lab9/visitors.py`** — Vizitatori pre/in/post-ordine + EvaluatorVisitor (stub)
-- **`lab9/recursive_builder.py`** — Versiunea recursivă a ASTBuilder (stub)
-- **`lab9/main.py`** — Entry point demonstrativ
-- **`tests/test_lab9.py`** — Suite de teste (nu modifica)
+Trei teme independente de design patterns:
 
-## Cum se rulează
+| Tema | Pattern-uri | Fișier |
+|------|-------------|--------|
+| 1 | Chain of Responsibility + Command | `lab09/chain_command.py` |
+| 2 | State Machine + Observer | `lab09/vending_machine.py` |
+| 3 | Proxy cu caching HTTP | `lab09/http_proxy.py` |
+
+Fișierele sursă conțin **schelete** (`raise NotImplementedError("De implementat")`).
+Testele din `tests/test_lab9.py` sunt complete și definesc comportamentul așteptat.
+
+## Rulare teste
 
 ```bash
-# Rulare teste
 uv run pytest
-
-# Rulare cu output detaliat
 uv run pytest -v
-
-# Demonstrație completă
-uv run python -m lab9.main
 ```
 
-## Cum se instalează dependențele
+## CI
 
-```bash
-uv sync
-```
-
-## Cerințe
-
-- Python >= 3.11
-- uv (package manager)
+La fiecare `git push`, GitHub Actions rulează automat `uv run pytest`.
