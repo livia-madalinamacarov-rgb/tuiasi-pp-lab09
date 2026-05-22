@@ -1,333 +1,200 @@
 """
-Teste pentru Lab 9 — Design Patterns în Python.
-
-Acoperă:
-  - Tema 1: Chain of Responsibility + Command (chain_command.py)
-  - Tema 2: State Machine + Observer (vending_machine.py)
-  - Tema 3: Proxy cu caching HTTP (http_proxy.py)
+Teste pentru Lab 9: Singleton Logger + AST cu Vizitatori.
 """
-
-import json
 import os
-from unittest.mock import MagicMock
-
 import pytest
 
-from lab09.chain_command import (
-    BashHandler,
-    FileExecutor,
-    JavaHandler,
-    KotlinHandler,
-    PythonCommand,
-    PythonHandler,
-)
-from lab09.http_proxy import CachingHTTPProxy, RealHTTPClient
-from lab09.vending_machine import (
-    Observer,
-    SelectProductSTM,
-    SelectProductState,
-    TakeMoneySTM,
-    TakeMoneyState,
-    VendingMachineSTM,
+from lab09.singleton_log import Log
+from lab09.ast_expr import (
+    Operand, Operator, AST, ASTBuilder,
+    PreOrderVisitor, InOrderVisitor, PostOrderVisitor, CalculatorVisitor,
 )
 
-# ===========================================================================
-# Tema 1 — Chain of Responsibility + Command
-# ===========================================================================
 
-KOTLIN_CODE = "fun main() {\n    println(\"Hello\")\n}\n"
-PYTHON_CODE = "def main():\n    print('Hello')\n\nif __name__ == '__main__':\n    main()\n"
-BASH_CODE = "#!/bin/bash\necho 'Hello World'\n"
-JAVA_CODE = (
-    "public class Main {\n"
-    "    public static void main(String[] args) {\n"
-    "        System.out.println(\"Hello\");\n"
-    "    }\n"
-    "}\n"
-)
-NECUNOSCUT = "xxxxxxxxxxx\nyyyyyyy\nzzzzzzz\n"
+# ---------------------------------------------------------------------------
+# Singleton Log
+# ---------------------------------------------------------------------------
 
+class TestSingletonLog:
 
-class TestChainOfResponsibility:
-    def test_kotlin_handler_recunoaste_kotlin(self) -> None:
-        assert KotlinHandler().handle(KOTLIN_CODE) == "kotlin"
+    def setup_method(self):
+        Log.reset()
 
-    def test_python_handler_recunoaste_python(self) -> None:
-        assert PythonHandler().handle(PYTHON_CODE) == "python"
+    def teardown_method(self):
+        Log.reset()
 
-    def test_bash_handler_recunoaste_bash(self) -> None:
-        assert BashHandler().handle(BASH_CODE) == "bash"
+    def test_create_first_instance(self, tmp_path):
+        log = Log(str(tmp_path / "test.log"))
+        assert Log._instance is log
 
-    def test_java_handler_recunoaste_java(self) -> None:
-        assert JavaHandler().handle(JAVA_CODE) == "java"
+    def test_create_second_instance_raises(self, tmp_path):
+        Log(str(tmp_path / "a.log"))
+        with pytest.raises(Exception, match="singleton"):
+            Log(str(tmp_path / "b.log"))
 
-    def test_kotlin_handler_nu_recunoaste_python(self) -> None:
-        """KotlinHandler singur nu trebuie să returneze 'kotlin' pentru cod Python."""
-        assert KotlinHandler().handle(PYTHON_CODE) != "kotlin"
+    def test_get_instance_returns_same_object(self, tmp_path):
+        log = Log(str(tmp_path / "test.log"))
+        assert Log.get_instance() is log
 
-    def test_lant_kotlin_python_identifica_python(self) -> None:
-        kotlin = KotlinHandler()
-        python = PythonHandler()
-        kotlin.set_next(python)
-        assert kotlin.handle(PYTHON_CODE) == "python"
+    def test_get_instance_without_create_raises(self):
+        with pytest.raises(Exception):
+            Log.get_instance()
 
-    def test_lant_complet_identifica_java(self) -> None:
-        kotlin = KotlinHandler()
-        python = PythonHandler()
-        bash = BashHandler()
-        java = JavaHandler()
-        kotlin.set_next(python).set_next(bash).set_next(java)
-        assert kotlin.handle(JAVA_CODE) == "java"
+    def test_write_appends_lines(self, tmp_path):
+        fname = str(tmp_path / "test.log")
+        log = Log(fname)
+        log.write("prima linie")
+        log.write("a doua linie")
+        with open(fname) as f:
+            lines = [l.strip() for l in f.readlines()]
+        assert "prima linie" in lines
+        assert "a doua linie" in lines
 
-    def test_lant_returneaza_none_pentru_necunoscut(self) -> None:
-        kotlin = KotlinHandler()
-        python = PythonHandler()
-        bash = BashHandler()
-        java = JavaHandler()
-        kotlin.set_next(python).set_next(bash).set_next(java)
-        assert kotlin.handle(NECUNOSCUT) is None
+    def test_existing_file_deleted_on_create(self, tmp_path):
+        fname = str(tmp_path / "test.log")
+        with open(fname, "w") as f:
+            f.write("continut vechi\n")
+        log = Log(fname)
+        log.write("continut nou")
+        with open(fname) as f:
+            content = f.read()
+        assert "continut vechi" not in content
+        assert "continut nou" in content
 
-    def test_set_next_returneaza_handler_urmator(self) -> None:
-        """set_next() trebuie să returneze handler-ul primit (pentru înlănțuire)."""
-        kotlin = KotlinHandler()
-        python = PythonHandler()
-        assert kotlin.set_next(python) is python
+    def test_reset_allows_new_instance(self, tmp_path):
+        Log(str(tmp_path / "a.log"))
+        Log.reset()
+        assert Log._instance is None
+        log2 = Log(str(tmp_path / "b.log"))  # nu trebuie să arunce
+        assert Log._instance is log2
 
 
-class TestCommand:
-    def test_python_command_executa_si_returneaza_output(self) -> None:
-        cmd = PythonCommand("print('Hello from Python')")
-        result = cmd.executa()
-        assert "Hello from Python" in result
+# ---------------------------------------------------------------------------
+# Noduri ASTNode
+# ---------------------------------------------------------------------------
+
+class TestASTNodes:
+
+    def test_operand_is_not_operator(self):
+        assert Operand(5).is_operator() is False
+
+    def test_operand_get_value_returns_string(self):
+        assert Operand(42).get_value() == "42"
+
+    def test_operand_get_value_zero(self):
+        assert Operand(0).get_value() == "0"
+
+    def test_operator_is_operator(self):
+        assert Operator("+").is_operator() is True
+
+    def test_operator_get_value(self):
+        assert Operator("-").get_value() == "-"
+        assert Operator("*").get_value() == "*"
 
 
-class TestFileExecutor:
-    def test_executor_detecteaza_si_executa_python(self) -> None:
-        executor = FileExecutor()
-        result = executor.detecteaza_si_executa("print('Hello from executor')")
-        assert "Hello from executor" in result
+# ---------------------------------------------------------------------------
+# ASTBuilder + vizitatori
+# ---------------------------------------------------------------------------
 
-    def test_executor_ridica_eroare_pentru_necunoscut(self) -> None:
-        executor = FileExecutor()
-        with pytest.raises(ValueError):
-            executor.detecteaza_si_executa(NECUNOSCUT)
+def _build(expr: str) -> AST:
+    ast = AST()
+    ASTBuilder(expr, ast)
+    return ast
 
 
-# ===========================================================================
-# Tema 2 — State Machine + Observer
-# ===========================================================================
+class TestPreOrderVisitor:
+
+    def test_single_operand(self):
+        ast = _build("7")
+        v = PreOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["7"]
+
+    def test_simple_addition(self):
+        ast = _build("3+4")
+        v = PreOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["+", "3", "4"]
+
+    def test_chain_expression(self):
+        # 31+42-5 → arbore: + la rădăcină, 31 stânga, - dreapta (42, 5)
+        ast = _build("31+42-5")
+        v = PreOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["+", "31", "-", "42", "5"]
 
 
-class _CollectObserver(Observer):
-    """Observer ajutător care colectează argumentele notificărilor."""
+class TestInOrderVisitor:
 
-    def __init__(self) -> None:
-        self.calls: list = []
+    def test_simple_addition(self):
+        ast = _build("3+4")
+        v = InOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["3", "+", "4"]
 
-    def update(self, *args, **kwargs) -> None:
-        self.calls.append(args)
+    def test_chain_expression(self):
+        ast = _build("31+42-5")
+        v = InOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["31", "+", "42", "-", "5"]
 
-
-class TestObservable:
-    def test_notifica_observer_la_introducere_bani(self) -> None:
-        obs = _CollectObserver()
-        stm = TakeMoneySTM()
-        stm.adauga_observer(obs)
-        stm.introdu_bani(2.5)
-        assert len(obs.calls) == 1
-        assert obs.calls[0][0] == pytest.approx(2.5)
-
-    def test_observer_eliminat_nu_primeste_notificari(self) -> None:
-        obs = _CollectObserver()
-        stm = TakeMoneySTM()
-        stm.adauga_observer(obs)
-        stm.elimina_observer(obs)
-        stm.introdu_bani(1.0)
-        assert len(obs.calls) == 0
-
-    def test_select_notifica_cu_produs_si_pret(self) -> None:
-        obs = _CollectObserver()
-        stm = SelectProductSTM()
-        stm.adauga_observer(obs)
-        stm.selecteaza_produs("Cola", 2.5)
-        assert len(obs.calls) == 1
-        assert obs.calls[0] == ("Cola", 2.5)
+    def test_multidigit_numbers(self):
+        ast = _build("100+200")
+        v = InOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["100", "+", "200"]
 
 
-class TestTakeMoneySTM:
-    def test_stare_initiala(self) -> None:
-        stm = TakeMoneySTM()
-        assert stm.get_stare() == TakeMoneyState.ASTEPTARE
-        assert stm.get_suma() == pytest.approx(0.0)
+class TestPostOrderVisitor:
 
-    def test_introdu_bani_schimba_starea(self) -> None:
-        stm = TakeMoneySTM()
-        stm.introdu_bani(2.0)
-        assert stm.get_stare() == TakeMoneyState.INTRODUCERE
+    def test_simple_addition(self):
+        ast = _build("3+4")
+        v = PostOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["3", "4", "+"]
 
-    def test_introdu_bani_acumuleaza(self) -> None:
-        stm = TakeMoneySTM()
-        stm.introdu_bani(1.0)
-        stm.introdu_bani(2.5)
-        assert stm.get_suma() == pytest.approx(3.5)
+    def test_chain_expression(self):
+        ast = _build("31+42-5")
+        v = PostOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["31", "42", "5", "-", "+"]
 
-    def test_returneaza_bani_reseteaza(self) -> None:
-        stm = TakeMoneySTM()
-        stm.introdu_bani(5.0)
-        returned = stm.returneaza_bani()
-        assert returned == pytest.approx(5.0)
-        assert stm.get_suma() == pytest.approx(0.0)
-        assert stm.get_stare() == TakeMoneyState.ASTEPTARE
-
-    def test_reseteaza(self) -> None:
-        stm = TakeMoneySTM()
-        stm.introdu_bani(3.0)
-        stm.reseteaza()
-        assert stm.get_suma() == pytest.approx(0.0)
-        assert stm.get_stare() == TakeMoneyState.ASTEPTARE
+    def test_subtraction(self):
+        ast = _build("10-3")
+        v = PostOrderVisitor()
+        ast.accept(v)
+        assert v.result == ["10", "3", "-"]
 
 
-class TestSelectProductSTM:
-    def test_stare_initiala(self) -> None:
-        stm = SelectProductSTM()
-        assert stm.get_stare() == SelectProductState.ASTEPTARE
-        assert stm.get_produs_selectat() is None
+class TestCalculatorVisitor:
 
-    def test_selecteaza_produs_schimba_starea(self) -> None:
-        stm = SelectProductSTM()
-        stm.selecteaza_produs("Cola", 2.5)
-        assert stm.get_stare() == SelectProductState.SELECTARE
+    def test_addition(self):
+        ast = _build("3+4")
+        v = CalculatorVisitor()
+        ast.accept(v)
+        assert v.result == 7
 
-    def test_get_produs_selectat(self) -> None:
-        stm = SelectProductSTM()
-        stm.selecteaza_produs("Cola", 2.5)
-        produs, pret = stm.get_produs_selectat()
-        assert produs == "Cola"
-        assert pret == pytest.approx(2.5)
+    def test_subtraction(self):
+        ast = _build("10-3")
+        v = CalculatorVisitor()
+        ast.accept(v)
+        assert v.result == 7
 
-    def test_reseteaza(self) -> None:
-        stm = SelectProductSTM()
-        stm.selecteaza_produs("Apa", 1.5)
-        stm.reseteaza()
-        assert stm.get_stare() == SelectProductState.ASTEPTARE
-        assert stm.get_produs_selectat() is None
+    def test_chain_expression(self):
+        # 31+(42-5) = 68  (arbore dreapta-recursiv)
+        ast = _build("31+42-5")
+        v = CalculatorVisitor()
+        ast.accept(v)
+        assert v.result == 68
 
+    def test_multidigit_addition(self):
+        ast = _build("100+200")
+        v = CalculatorVisitor()
+        ast.accept(v)
+        assert v.result == 300
 
-class TestVendingMachineSTM:
-    def test_valideaza_tranzactie_suma_suficienta(self) -> None:
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(5.0)
-        assert vm.valideaza_tranzactie("Cola", 2.5) is True
-
-    def test_valideaza_tranzactie_suma_insuficienta(self) -> None:
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(1.0)
-        assert vm.valideaza_tranzactie("Cola", 2.5) is False
-
-    def test_calculeaza_rest(self) -> None:
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(5.0)
-        assert vm.calculeaza_rest(2.5) == pytest.approx(2.5)
-
-    def test_finalizeaza_cumparare_returneaza_rest(self) -> None:
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(5.0)
-        vm.select_product_stm.selecteaza_produs("Cola", 2.5)
-        rest = vm.finalizeaza_cumparare()
-        assert rest == pytest.approx(2.5)
-
-    def test_finalizeaza_cumparare_reseteaza_stm(self) -> None:
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(5.0)
-        vm.select_product_stm.selecteaza_produs("Cola", 2.5)
-        vm.finalizeaza_cumparare()
-        assert vm.take_money_stm.get_suma() == pytest.approx(0.0)
-        assert vm.select_product_stm.get_produs_selectat() is None
-
-    def test_select_product_notifica_vending_machine(self) -> None:
-        """VendingMachineSTM este observer la SelectProductSTM."""
-        vm = VendingMachineSTM()
-        vm.take_money_stm.introdu_bani(5.0)
-        # Selectarea produsului trebuie să ajungă la vm.update() fără eroare
-        vm.select_product_stm.selecteaza_produs("Apa", 1.5)
-
-
-# ===========================================================================
-# Tema 3 — Proxy cu caching HTTP
-# ===========================================================================
-
-CACHE_TEST = "test_cache_lab9.txt"
-
-
-def _make_proxy(text: str = "Mock response") -> tuple[CachingHTTPProxy, MagicMock]:
-    mock_client: MagicMock = MagicMock()
-    mock_client.get.return_value = text
-    return CachingHTTPProxy(mock_client, CACHE_TEST), mock_client
-
-
-class TestRealHTTPClient:
-    def test_get_apeleaza_requests_si_returneaza_text(self) -> None:
-        mock_resp = MagicMock()
-        mock_resp.text = "Hello World"
-
-        import unittest.mock as um
-
-        with um.patch("lab09.http_proxy.requests.get", return_value=mock_resp):
-            client = RealHTTPClient()
-            assert client.get("http://example.com") == "Hello World"
-
-
-class TestCachingHTTPProxy:
-    def setup_method(self) -> None:
-        if os.path.exists(CACHE_TEST):
-            os.remove(CACHE_TEST)
-
-    def teardown_method(self) -> None:
-        if os.path.exists(CACHE_TEST):
-            os.remove(CACHE_TEST)
-
-    def test_prima_cerere_apeleaza_clientul_real(self) -> None:
-        proxy, mock_client = _make_proxy("First")
-        proxy.get("http://example.com")
-        mock_client.get.assert_called_once_with("http://example.com")
-
-    def test_a_doua_cerere_foloseste_cache(self) -> None:
-        proxy, mock_client = _make_proxy("Cached")
-        proxy.get("http://example.com")
-        result = proxy.get("http://example.com")
-        assert mock_client.get.call_count == 1
-        assert result == "Cached"
-
-    def test_url_diferit_face_request_separat(self) -> None:
-        proxy, mock_client = _make_proxy()
-        proxy.get("http://example.com/1")
-        proxy.get("http://example.com/2")
-        assert mock_client.get.call_count == 2
-
-    def test_cache_expirat_face_request_nou(self) -> None:
-        proxy, mock_client = _make_proxy("Fresh")
-        intrare_expirata = {
-            "url": "http://example.com",
-            "timestamp": 0.0,
-            "raspuns": "Old",
-        }
-        with open(CACHE_TEST, "w") as f:
-            f.write(json.dumps(intrare_expirata) + "\n")
-
-        result = proxy.get("http://example.com")
-        mock_client.get.assert_called_once()
-        assert result == "Fresh"
-
-    def test_fisier_cache_creat_dupa_prima_cerere(self) -> None:
-        proxy, _ = _make_proxy()
-        proxy.get("http://example.com")
-        assert os.path.exists(CACHE_TEST)
-
-    def test_cache_contine_url_timestamp_raspuns(self) -> None:
-        proxy, _ = _make_proxy("Test response")
-        proxy.get("http://example.com")
-        with open(CACHE_TEST) as f:
-            intrare = json.loads(f.readline())
-        assert intrare["url"] == "http://example.com"
-        assert intrare["raspuns"] == "Test response"
-        assert "timestamp" in intrare
+    def test_single_operand(self):
+        ast = _build("42")
+        v = CalculatorVisitor()
+        ast.accept(v)
+        assert v.result == 42

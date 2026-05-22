@@ -2,13 +2,12 @@
 
 ## Descriere
 
-Implementează trei aplicații independente, fiecare folosind câte unul-două design patterns clasice:
+Două teme independente:
 
-| Tema | Pattern-uri | Fișier |
-|------|-------------|--------|
-| 1 | Chain of Responsibility + Command | `chain_command.py` |
-| 2 | State Machine + Observer | `vending_machine.py` |
-| 3 | Proxy (+ Bonus: Strategy) | `http_proxy.py` |
+| Temă | Pattern | Fișier |
+|------|---------|--------|
+| 1 | Singleton | `singleton_log.py` |
+| 2 | AST + Visitor | `ast_expr.py` |
 
 ---
 
@@ -18,12 +17,11 @@ Implementează trei aplicații independente, fiecare folosind câte unul-două d
 lab09/
   lab09/
     __init__.py
-    chain_command.py    ← Tema 1: CoR + Command (stub)
-    vending_machine.py  ← Tema 2: STM + Observer (stub)
-    http_proxy.py       ← Tema 3: Proxy (stub)
+    singleton_log.py   ← Tema 1: Logger Singleton (stub)
+    ast_expr.py        ← Tema 2: AST cu vizitatori (stub)
   tests/
     __init__.py
-    test_lab9.py        ← teste complete (nu se modifică)
+    test_lab9.py       ← teste complete (nu se modifică)
   .github/workflows/classroom.yml
   pyproject.toml
   ASSIGNMENT.md
@@ -32,174 +30,132 @@ lab09/
 
 ---
 
-## Tema 1 — Identificare tip fișier + execuție (CoR + Command)
+## Tema 1 — Singleton Logger
 
-Aplicația primește conținutul unui fișier **fără extensie** și trebuie să:
-1. Determine tipul fișierului (Kotlin / Python / Bash / Java) **exclusiv din conținut**
-2. Execute conținutul cu comanda corespunzătoare și returneze output-ul
+Se implementează un serializator simplu (logger) bazat pe pattern-ul Singleton: poate exista
+o singură instanță de `Log` per aplicație.
 
-### `FileTypeHandler` (baza CoR)
+### Clasa `Log`
 
-Clasă abstractă cu:
-- `set_next(handler)` — înlănțuiește handlerul următor; returnează `handler` (permite `h1.set_next(h2).set_next(h3)`)
-- `handle(continut: str) -> Optional[str]` — încearcă să identifice tipul; dacă nu reușește, pasează la `_next`
+**Câmpuri de clasă:**
+- `_instance: Optional[Log]` — instanța unică (inițializată cu `None`)
 
-### Handlere concrete
+**Metode de implementat:**
 
-| Clasă | Detectează | Sugestii de detecție |
-|-------|-----------|----------------------|
-| `KotlinHandler` | Kotlin | `fun`, `val`, `var`, `when`, `println` |
-| `PythonHandler` | Python | `def`, `import`, `print(`, shebang `python` |
-| `BashHandler` | Bash | shebang `#!/bin/bash`, `echo`, `$` |
-| `JavaHandler` | Java | `public class`, `System.out`, `import java.` |
+| Metodă | Semnătură | Comportament |
+|--------|-----------|-------------|
+| `__init__` | `(self, fname: str)` | Dacă `_instance` există deja → aruncă `Exception("Clasa este un singleton")`. Altfel: salvează calea fișierului, dacă fișierul există îl șterge (log nou la fiecare rulare), setează `Log._instance = self` |
+| `write` | `(self, line: str)` | Deschide fișierul în modul `append`, scrie `line + "\n"`, închide |
+| `get_instance` | `@staticmethod` → `Log` | Returnează `_instance`. Dacă nu există → aruncă `Exception("Nu există instanță Log")` |
+| `reset` | `@staticmethod` | Setează `Log._instance = None` (util pentru teste) |
 
-Fiecare handler returnează `'kotlin'` / `'python'` / `'bash'` / `'java'` sau pasează mai departe.
-
-### `FileCommand` (baza Command)
-
-Clasă abstractă cu:
-- `__init__(continut: str)` — memorează conținutul
-- `executa() -> str` — salvează conținutul într-un fișier temporar (`tempfile`), îl execută cu `subprocess.run()`, returnează stdout-ul
-
-### Comenzi concrete
-
-| Clasă | Comandă de execuție |
-|-------|---------------------|
-| `PythonCommand` | `python3 <fișier_temp>` |
-| `BashCommand` | `bash <fișier_temp>` |
-| `KotlinCommand` | `kotlinc-jvm` + `kotlin` |
-| `JavaCommand` | `javac <fișier_temp>` + `java <clasă>` |
-
-### `FileExecutor`
-
-Combină CoR cu Command:
-- `__init__()` — construiește lanțul: Kotlin → Python → Bash → Java
-- `detecteaza_si_executa(continut: str) -> str` — detectează tipul, instanțiază comanda corespunzătoare, execută și returnează output-ul; ridică `ValueError` dacă tipul nu e recunoscut
-
-### Exemplu de utilizare
-
+**Exemplu:**
 ```python
-executor = FileExecutor()
-cod = "print('Hello from Python')"
-print(executor.detecteaza_si_executa(cod))  # → "Hello from Python\n"
+log = Log("output.log")   # prima și singura creare permisă
+log.write("prima linie")
+log2 = Log.get_instance() # aceeași instanță ca log
+log2.write("a doua linie")
+
+Log(...)  # → Exception("Clasa este un singleton")
 ```
 
 ---
 
-## Tema 2 — Automat de sucuri (STM + Observer)
+## Tema 2 — AST cu Vizitatori
 
-Simulează un automat de sucuri prin trei componente interconectate.
+Se implementează un arbore sintactic abstract (AST) pentru expresii aritmetice cu operatorii
+`+`, `-`, `*`, `/` și operanzi întregi (inclusiv multi-cifră). Vizitatorii parcurg arborele în
+diferite ordini sau evaluează expresia.
 
-### Pattern Observer
+### Arborele pentru `"31+42-5"`
 
-**`Observer`** (ABC):
-- `update(*args, **kwargs)` — metodă abstractă
+Algoritmul de inserare este dreapta-recursiv: operatorul nou se plasează în subarborele drept.
 
-**`Observable`** (ABC):
-- `adauga_observer(observer)` — adaugă la lista internă
-- `elimina_observer(observer)` — elimină din lista internă
-- `notifica_observeri(*args, **kwargs)` — apelează `update()` pe fiecare observer
+```
+     +
+    / \
+  31   -
+      / \
+    42    5
+```
 
-### `TakeMoneySTM(Observable)`
+Traversări:
+- **Pre-ordine**: `+`, `31`, `-`, `42`, `5`
+- **În-ordine**: `31`, `+`, `42`, `-`, `5`
+- **Post-ordine**: `31`, `42`, `5`, `-`, `+`
+- **Valoare**: `31 + (42 - 5) = 68`
 
-Stări: `ASTEPTARE` → `INTRODUCERE`
+### `ASTNode` (abstract — gata)
 
-| Metodă | Comportament |
-|--------|-------------|
-| `introdu_bani(suma)` | Adaugă la total, trece în `INTRODUCERE`, notifică observerii cu suma curentă |
-| `returneaza_bani()` | Returnează suma, resetează la 0, trece în `ASTEPTARE` |
-| `get_suma()` | Returnează suma curentă |
-| `get_stare()` | Returnează starea curentă |
-| `reseteaza()` | Suma ← 0, stare ← `ASTEPTARE` |
+Metodele `is_operator() -> bool`, `get_value() -> str`, `accept(visitor)` sunt abstracte.
 
-Observerul implicit (opțional) afișează la consolă suma introdusă.
+### `Operand(value: int)` (stub)
 
-### `SelectProductSTM(Observable)`
+| Metodă | Returnează |
+|--------|-----------|
+| `is_operator()` | `False` |
+| `get_value()` | `str(self._value)` |
+| `accept(visitor)` | `visitor.visit_operand(self)` |
 
-Stări: `ASTEPTARE` → `SELECTARE`
+### `Operator(symbol: str)` (stub)
 
-| Metodă | Comportament |
-|--------|-------------|
-| `selecteaza_produs(produs, pret)` | Salvează produsul, trece în `SELECTARE`, notifică cu `(produs, pret)` |
-| `get_produs_selectat()` | Returnează `(produs, pret)` sau `None` |
-| `get_stare()` | Returnează starea curentă |
-| `reseteaza()` | Produs ← None, stare ← `ASTEPTARE` |
+| Metodă | Returnează |
+|--------|-----------|
+| `is_operator()` | `True` |
+| `get_value()` | `self._symbol` |
+| `accept(visitor)` | `visitor.visit_operator(self)` |
 
-### `VendingMachineSTM(Observer)`
+### `AST` (stub)
 
-Entitatea centrală. Se înregistrează ca observer la `SelectProductSTM`.
+**Câmpuri:** `data: Optional[ASTNode]`, `left: Optional[AST]`, `right: Optional[AST]`
 
-| Atribut/Metodă | Detalii |
-|----------------|---------|
-| `take_money_stm` | instanță `TakeMoneySTM` |
-| `select_product_stm` | instanță `SelectProductSTM` |
-| `update(produs, pret)` | apelat de STM la selecție; verifică validitatea tranzacției |
-| `valideaza_tranzactie(produs, pret)` | `True` dacă suma introdusă ≥ preț |
-| `calculeaza_rest(pret)` | suma curentă − preț |
-| `finalizeaza_cumparare()` | calculează restul, resetează ambele STM-uri, returnează restul |
+**`add_node(token: ASTNode)`** — inserează token-ul urmând algoritmul:
 
-Produse disponibile: `Cola (2.5 lei)`, `Fanta (2.5 lei)`, `Apa (1.5 lei)`, `Suc de mere (3.0 lei)`.
+```
+dacă data este None:
+    data = token
+dacă token este Operator:
+    dacă left = right = None:    mută data la stânga, data = token
+    dacă left ≠ None, right = None: SyntaxError (2 operatori consecutivi)
+    dacă left ≠ None, right ≠ None: inserează recursiv în right
+dacă token este Operand:
+    dacă left = right = None:    SyntaxError (2 operanzi consecutivi)
+    dacă left ≠ None, right = None: right = AST nou cu token
+    dacă left ≠ None, right ≠ None: inserează recursiv în right
+```
 
-### Exemplu de utilizare
+**`accept(visitor)`** → apelează `visitor.visit(self)`
 
+### `ASTBuilder(expression: str, ast: AST)` (stub)
+
+**`_parse()`** — parcurge `expression` caracter cu caracter, construiește lista `_symbols`:
+- cifre consecutive formează un `Operand` (suport multi-cifră)
+- `+`, `-`, `*`, `/` formează câte un `Operator`
+
+### Vizitatori (stub)
+
+Fiecare vizitator implementează `visit(node: AST)` și colectează rezultatele în `self.result`.
+
+| Clasă | Parcurgere | Algoritm |
+|-------|-----------|----------|
+| `PreOrderVisitor` | rădăcină → stânga → dreapta | adaugă `node.data.get_value()`, recurse stânga, recurse dreapta |
+| `InOrderVisitor` | stânga → rădăcină → dreapta | recurse stânga, adaugă `node.data.get_value()`, recurse dreapta |
+| `PostOrderVisitor` | stânga → dreapta → rădăcină | recurse stânga, recurse dreapta, adaugă `node.data.get_value()` |
+| `CalculatorVisitor` | post-ordine + stivă | dacă Operand: push valoare; dacă Operator: pop dreapta, pop stânga, push rezultat; rezultatul final → `self.result` |
+
+**Exemplu complet:**
 ```python
-vm = VendingMachineSTM()
-vm.take_money_stm.introdu_bani(5.0)
-vm.select_product_stm.selecteaza_produs("Cola", 2.5)
-rest = vm.finalizeaza_cumparare()
-print(f"Rest: {rest} lei")  # → Rest: 2.5 lei
+ast = AST()
+ASTBuilder("31+42-5", ast)
+
+pre = PreOrderVisitor()
+ast.accept(pre)
+# pre.result == ["+", "31", "-", "42", "5"]
+
+calc = CalculatorVisitor()
+ast.accept(calc)
+# calc.result == 68
 ```
-
----
-
-## Tema 3 — Proxy cu caching HTTP
-
-Realizează cereri HTTP GET cu un mecanism de caching în fișier text.
-
-### `HTTPClient` (ABC)
-
-- `get(url: str) -> str`
-
-### `RealHTTPClient(HTTPClient)`
-
-- `get(url)` — apelează `requests.get(url)` și returnează `.text`
-
-### `CachingHTTPProxy(HTTPClient)`
-
-Proxy care verifică/actualizează un cache stocat într-un fișier text (câte o linie JSON per intrare).
-
-Format intrare cache:
-```json
-{"url": "https://...", "timestamp": 1713000000.0, "raspuns": "..."}
-```
-
-**`__init__(client, fisier_cache="cache.txt")`**
-
-**`get(url) -> str`** — logică:
-1. Citește cache-ul
-2. Dacă există intrare pentru `url` și **nu a expirat** (< 1 oră) → returnează răspunsul din cache
-3. Dacă a **expirat** → apelează clientul real, actualizează intrarea, rescrie cache-ul
-4. Dacă **nu există** → apelează clientul real, adaugă intrarea, rescrie cache-ul
-
-**`_citeste_cache() -> list[dict]`** — parsează fișierul; dacă nu există, returnează `[]`
-
-**`_scrie_cache(intrari)`** — scrie lista ca linii JSON în fișier
-
-**`_este_valida(intrare) -> bool`** — `True` dacă `time.time() - intrare["timestamp"] < 3600`
-
-### Exemplu de utilizare
-
-```python
-client = RealHTTPClient()
-proxy = CachingHTTPProxy(client, "cache.txt")
-
-r1 = proxy.get("https://httpbin.org/get")  # cerere reală
-r2 = proxy.get("https://httpbin.org/get")  # din cache
-```
-
-### [BONUS] Strategy + Load Balancing
-
-Folosind pattern-ul **Strategy** combinat cu proxy-ul, monitorizează numărul de cereri într-o cuantă de timp. Dacă numărul de cereri a crescut de 10 ori față de cuanta anterioară, creează un nou proces (`multiprocessing`) care să gestioneze jumătate din cereri.
 
 ---
 
@@ -207,8 +163,6 @@ Folosind pattern-ul **Strategy** combinat cu proxy-ul, monitorizează numărul d
 
 ```bash
 uv run pytest
-uv run pytest -v          # verbose
-uv run pytest -k Tema1    # filtrare după clasă/funcție
 ```
 
 ---
@@ -217,15 +171,13 @@ uv run pytest -k Tema1    # filtrare după clasă/funcție
 
 | Cerință | Punctaj |
 |---------|---------|
-| `FileTypeHandler.set_next()` + logică pasare | 5p |
-| Handlere CoR — detectare corectă (toate 4 tipuri) | 15p |
-| `FileCommand` + `PythonCommand.executa()` | 10p |
-| `FileExecutor` — detectare + execuție + ValueError | 10p |
-| `Observable` — adaugă/elimină/notifică | 5p |
-| `TakeMoneySTM` — stări + notificări | 10p |
-| `SelectProductSTM` — stări + notificări | 10p |
-| `VendingMachineSTM` — validare + rest + finalizare | 15p |
-| `RealHTTPClient.get()` | 5p |
-| `CachingHTTPProxy` — cache miss/hit/expirat | 15p |
-| **[BONUS]** Strategy + Load Balancing | +10p |
-| **Total** | **100p** |
+| `Log.__init__` (Singleton + ștergere fișier existent) | 1p |
+| `Log.write` + `Log.get_instance` + `Log.reset` | 1p |
+| `Operand` + `Operator` (is_operator, get_value) | 1p |
+| `AST.add_node` (toate cazurile) | 2p |
+| `ASTBuilder._parse` (multi-cifră, toți operatorii) | 1p |
+| `PreOrderVisitor` | 1p |
+| `InOrderVisitor` | 1p |
+| `PostOrderVisitor` | 1p |
+| `CalculatorVisitor` | 1p |
+| **Total** | **10p** |
