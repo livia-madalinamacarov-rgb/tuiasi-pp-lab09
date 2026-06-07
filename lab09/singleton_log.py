@@ -10,11 +10,6 @@ from typing import Optional
 class Log:
     """
     Logger Singleton.
-
-    Utilizare:
-        log = Log("output.log")          # prima instanță
-        log2 = Log.get_instance()        # aceeași instanță
-        log.write("mesaj")
     """
 
     _instance: Optional["Log"] = None
@@ -22,30 +17,33 @@ class Log:
     def __init__(self, fname: str) -> None:
         """
         Creează instanța Singleton cu fișierul [fname].
-
-        Pre-condiții: nu există deja o instanță (Log._instance is None).
-        Aruncă Exception("Clasa este un singleton") dacă o instanță există deja.
-
-        La creare, dacă fișierul [fname] există deja, îl șterge (log nou la fiecare rulare).
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if Log._instance is not None:
+            raise Exception("Clasa este un singleton")
+
+        self.fname = fname
+
+        # La creare, dacă fișierul [fname] există deja, îl șterge (log nou la fiecare rulare)
+        if os.path.exists(self.fname):
+            os.remove(self.fname)
+
+        Log._instance = self
 
     def write(self, line: str) -> None:
         """
         Adaugă [line] + newline la fișierul log.
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        with open(self.fname, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
 
     @staticmethod
     def get_instance() -> "Log":
         """
         Returnează instanța existentă.
-        Aruncă Exception("Nu există instanță Log") dacă nu a fost creată nicio instanță.
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if Log._instance is None:
+            raise Exception("Nu există instanță Log")
+        return Log._instance
 
     @staticmethod
     def reset() -> None:
@@ -53,5 +51,4 @@ class Log:
         Resetează instanța Singleton (util pentru teste).
         Setează Log._instance la None.
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        Log._instance = None

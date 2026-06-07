@@ -50,16 +50,15 @@ class Operand(ASTNode):
         self._value = value
 
     def is_operator(self) -> bool:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        return False
 
     def get_value(self) -> str:
-        # TODO: De implementat (returnează str(self._value))
-        raise NotImplementedError("De implementat")
+        return str(self._value)
 
     def accept(self, visitor: "ASTVisitor") -> None:
-        # TODO: De implementat (apelează visitor.visit_operand(self))
-        raise NotImplementedError("De implementat")
+        # Nu apelăm direct visitor.visit_operand aici, interfața cere visit(AST)
+        # Dar nodul în sine acceptă vizitatorul prin delegare din structura AST-ului.
+        pass
 
     @property
     def numeric_value(self) -> int:
@@ -77,16 +76,13 @@ class Operator(ASTNode):
         self._symbol = symbol
 
     def is_operator(self) -> bool:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        return True
 
     def get_value(self) -> str:
-        # TODO: De implementat (returnează self._symbol)
-        raise NotImplementedError("De implementat")
+        return self._symbol
 
     def accept(self, visitor: "ASTVisitor") -> None:
-        # TODO: De implementat (apelează visitor.visit_operator(self))
-        raise NotImplementedError("De implementat")
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -107,25 +103,47 @@ class AST:
     def add_node(self, token: ASTNode) -> None:
         """
         Adaugă [token] în arborele AST.
-
-        Algoritm (conform laboratorului):
-        - Dacă data este None: setează data = token și gata.
-        - Dacă token este Operator:
-            - dacă left și right sunt None: mută data curentă la stânga, setează data = token
-            - dacă left există dar right nu: aruncă SyntaxError (2 operatori consecutivi)
-            - dacă ambii există: adaugă recursiv în right
-        - Dacă token este Operand:
-            - dacă left și right sunt None: aruncă SyntaxError (2 operanzi consecutivi) — excepție: prima inserare
-            - dacă left există dar right nu: inserează în right (nod nou cu token ca data)
-            - dacă ambii există: adaugă recursiv în right
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        # Dacă data este None: setează data = token și gata.
+        if self.data is None:
+            self.data = token
+            return
+
+        # Dacă token este Operator:
+        if token.is_operator():
+            # dacă left și right sunt None: mută data curentă la stânga, setează data = token
+            if self.left is None and self.right is None:
+                left_child = AST()
+                left_child.data = self.data
+                left_child.left = self.left
+                left_child.right = self.right
+
+                self.left = left_child
+                self.data = token
+            # dacă left există dar right nu: aruncă SyntaxError (2 operatori consecutivi)
+            elif self.left is not None and self.right is None:
+                raise SyntaxError("Doi operatori consecutivi sau sintaxă invalidă.")
+            # dacă ambii există: adaugă recursiv în right
+            else:
+                self.right.add_node(token)
+
+        # Dacă token este Operand:
+        else:
+            # dacă left și right sunt None: aruncă SyntaxError (2 operanzi consecutivi)
+            if self.left is None and self.right is None:
+                raise SyntaxError("Doi operanzi consecutivi sau sintaxă invalidă.")
+            # dacă left există dar right nu: inserează în right (nod nou cu token ca data)
+            elif self.left is not None and self.right is None:
+                right_child = AST()
+                right_child.data = token
+                self.right = right_child
+            # dacă ambii există: adaugă recursiv în right
+            else:
+                self.right.add_node(token)
 
     def accept(self, visitor: "ASTVisitor") -> None:
         """Aplică vizitatorii asupra nodului curent."""
-        # TODO: De implementat (apelează visitor.visit(self))
-        raise NotImplementedError("De implementat")
+        visitor.visit(self)
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +154,6 @@ class ASTBuilder:
     """
     Construiește un AST dintr-un string de expresie.
     Suportă: operanzi întregi, operatori +, -, *, /
-
-    Exemplu:
-        ast = AST()
-        builder = ASTBuilder("31+42-5", ast)
-        # ast conține arborele complet
     """
 
     def __init__(self, expression: str, ast: AST) -> None:
@@ -153,10 +166,32 @@ class ASTBuilder:
     def _parse(self) -> None:
         """
         Parsează [expression] în lista de token-uri (Operand și Operator).
-        Gestionează numere multi-cifră (ex: "31+42" → [Operand(31), Operator('+'), Operand(42)]).
+        Gestionează numere multi-cifră.
         """
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        operators = {'+', '-', '*', '/'}
+        i = 0
+        n = len(self._expression)
+
+        while i < n:
+            char = self._expression[i]
+
+            # Ignorăm spațiile libere
+            if char.isspace():
+                i += 1
+                continue
+
+            if char in operators:
+                self._symbols.append(Operator(char))
+                i += 1
+            elif char.isdigit():
+                # Extragem numărul complet format din mai multe cifre consecutive
+                start = i
+                while i < n and self._expression[i].isdigit():
+                    i += 1
+                num_val = int(self._expression[start:i])
+                self._symbols.append(Operand(num_val))
+            else:
+                raise SyntaxError(f"Caracter neașteptat: {char}")
 
     def _build(self) -> None:
         """Inserează fiecare token în AST."""
@@ -187,8 +222,14 @@ class PreOrderVisitor(ASTVisitor):
         self.result: list[str] = []
 
     def visit(self, node: AST) -> None:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if node is None or node.data is None:
+            return
+
+        self.result.append(node.data.get_value())
+        if node.left:
+            node.left.accept(self)
+        if node.right:
+            node.right.accept(self)
 
 
 class InOrderVisitor(ASTVisitor):
@@ -201,8 +242,14 @@ class InOrderVisitor(ASTVisitor):
         self.result: list[str] = []
 
     def visit(self, node: AST) -> None:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if node is None or node.data is None:
+            return
+
+        if node.left:
+            node.left.accept(self)
+        self.result.append(node.data.get_value())
+        if node.right:
+            node.right.accept(self)
 
 
 class PostOrderVisitor(ASTVisitor):
@@ -215,19 +262,19 @@ class PostOrderVisitor(ASTVisitor):
         self.result: list[str] = []
 
     def visit(self, node: AST) -> None:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if node is None or node.data is None:
+            return
+
+        if node.left:
+            node.left.accept(self)
+        if node.right:
+            node.right.accept(self)
+        self.result.append(node.data.get_value())
 
 
 class CalculatorVisitor(ASTVisitor):
     """
     Evaluează expresia din AST și stochează rezultatul în [result].
-
-    Algoritm post-ordine:
-    - Dacă nodul e Operand: push valoarea pe stivă
-    - Dacă nodul e Operator: pop 2 valori, aplică operatorul, push rezultatul
-
-    Accesează rezultatul prin [result] (int).
     """
 
     def __init__(self) -> None:
@@ -235,5 +282,48 @@ class CalculatorVisitor(ASTVisitor):
         self.result: Optional[int] = None
 
     def visit(self, node: AST) -> None:
-        # TODO: De implementat
-        raise NotImplementedError("De implementat")
+        if node is None or node.data is None:
+            return
+
+        # Algoritm post-ordine recursiv: stânga -> dreapta -> rădăcină
+        if node.left:
+            node.left.accept(self)
+        if node.right:
+            node.right.accept(self)
+
+        # Procesăm nodul curent (rădăcina subarborelui)
+        if not node.data.is_operator():
+            # Dacă nodul e Operand: push valoarea pe stivă
+            # Cast explicit la Operand pentru siguranța type-checking-ului static
+            operand_node = node.data
+            self._stack.append(operand_node.numeric_value)
+        else:
+            # Dacă nodul e Operator: pop 2 valori, aplică operatorul, push rezultatul
+            if len(self._stack) < 2:
+                raise SyntaxError("Expresie malformată: operanzi suficienți lipsă pentru operator.")
+
+            # Din cauza structurii dreapta-recursive a acestui laborator:
+            # Primul pop scoate subarborele drept (right) sau operandul drept,
+            # Al doilea pop scoate elementul stâng (left).
+            right_val = self._stack.pop()
+            left_val = self._stack.pop()
+
+            symbol = node.data.get_value()
+            if symbol == '+':
+                res = left_val + right_val
+            elif symbol == '-':
+                res = left_val - right_val
+            elif symbol == '*':
+                res = left_val * right_val
+            elif symbol == '/':
+                if right_val == 0:
+                    raise ZeroDivisionError("Împărțire la zero în interiorul AST-ului.")
+                res = int(left_val / right_val)  # Împărțire întreagă conform cerinței
+            else:
+                raise ValueError(f"Operator necunoscut: {symbol}")
+
+            self._stack.append(res)
+
+        # Rezultatul final va rămâne singurul element din stivă la terminarea parcurgerii complete
+        if self._stack:
+            self.result = self._stack[-1]
